@@ -101,6 +101,8 @@ abstract class DestinationAcceptanceTest(
     protected var testSchemas: HashSet<String> = HashSet()
 
     private lateinit var testEnv: TestDestinationEnv
+    protected var fileTransferMountSource: Path? = null
+        private set
     protected open val isCloudTest: Boolean = true
     protected val featureFlags: FeatureFlags =
         if (isCloudTest) {
@@ -435,12 +437,15 @@ abstract class DestinationAcceptanceTest(
         mConnectorConfigUpdater = Mockito.mock(ConnectorConfigUpdater::class.java)
         testSchemas = HashSet()
         setup(testEnv, testSchemas)
+        fileTransferMountSource =
+            if (supportsFileTransfer) Files.createTempDirectory(testDir, "file_transfer") else null
 
         processFactory =
             DockerProcessFactory(
                 workspaceRoot,
                 workspaceRoot.toString(),
                 localRoot.toString(),
+                fileTransferMountSource,
                 "host",
                 getConnectorEnv()
             )
@@ -2683,6 +2688,8 @@ abstract class DestinationAcceptanceTest(
     private fun supportsNormalization(): Boolean {
         return supportsInDestinationNormalization() || normalizationFromDefinition()
     }
+
+    protected open val supportsFileTransfer: Boolean = false
 
     companion object {
         private val RANDOM = Random()
