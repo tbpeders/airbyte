@@ -41,6 +41,11 @@ class PartialAirbyteRecordMessage {
     @JsonProperty("meta")
     var meta: AirbyteRecordMessageMeta? = null
 
+    @get:JsonProperty("file")
+    @set:JsonProperty("file")
+    @JsonProperty("file")
+    var file: String? = null
+
     fun withNamespace(namespace: String?): PartialAirbyteRecordMessage {
         this.namespace = namespace
         return this
@@ -63,6 +68,11 @@ class PartialAirbyteRecordMessage {
 
     fun withMeta(meta: AirbyteRecordMessageMeta?): PartialAirbyteRecordMessage {
         this.meta = meta
+        return this
+    }
+
+    fun withFile(file: String): PartialAirbyteRecordMessage {
+        this.file = file
         return this
     }
 
@@ -97,6 +107,9 @@ class PartialAirbyteRecordMessage {
             '\'' +
             ", meta='" +
             meta +
+            '\'' +
+            ", file='" +
+            file +
             '\'' +
             '}'
     }

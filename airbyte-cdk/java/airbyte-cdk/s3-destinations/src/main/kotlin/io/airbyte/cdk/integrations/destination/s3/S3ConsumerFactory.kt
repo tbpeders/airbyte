@@ -5,11 +5,14 @@ package io.airbyte.cdk.integrations.destination.s3
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.google.common.base.Preconditions
+import io.airbyte.cdk.integrations.BaseConnector
 import io.airbyte.cdk.integrations.base.AirbyteMessageConsumer
 import io.airbyte.cdk.integrations.base.SerializedAirbyteMessageConsumer
 import io.airbyte.cdk.integrations.destination.StreamSyncSummary
 import io.airbyte.cdk.integrations.destination.async.AsyncStreamConsumer
 import io.airbyte.cdk.integrations.destination.async.buffers.BufferManager
+import io.airbyte.cdk.integrations.destination.async.function.DestinationFlushFunction
+import io.airbyte.cdk.integrations.destination.async.model.PartialAirbyteMessage
 import io.airbyte.cdk.integrations.destination.buffered_stream_consumer.BufferedStreamConsumer
 import io.airbyte.cdk.integrations.destination.buffered_stream_consumer.OnCloseFunction
 import io.airbyte.cdk.integrations.destination.buffered_stream_consumer.OnStartFunction
@@ -21,12 +24,14 @@ import io.airbyte.cdk.integrations.destination.record_buffer.SerializableBuffer
 import io.airbyte.cdk.integrations.destination.record_buffer.SerializedBufferingStrategy
 import io.airbyte.cdk.integrations.destination.s3.SerializedBufferFactory.Companion.getCreateFunction
 import io.airbyte.commons.exceptions.ConfigErrorException
+import io.airbyte.commons.features.FeatureFlags
 import io.airbyte.commons.json.Jsons
 import io.airbyte.protocol.models.v0.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.util.concurrent.Executors
 import java.util.function.Consumer
 import java.util.function.Function
+import java.util.stream.Stream
 import org.joda.time.DateTime
 import org.joda.time.DateTimeZone
 
@@ -188,7 +193,8 @@ class S3ConsumerFactory {
         s3Config: S3DestinationConfig,
         catalog: ConfiguredAirbyteCatalog,
         memoryRatio: Double,
-        nThreads: Int
+        nThreads: Int,
+        featureFlags: FeatureFlags
     ): SerializedAirbyteMessageConsumer {
         val writeConfigs = createWriteConfigs(storageOps, s3Config, catalog)
         // Buffer creation function: yields a file buffer that converts
@@ -203,15 +209,6 @@ class S3ConsumerFactory {
                 descriptor to Pair(stream.generationId, stream.syncId)
             }
 
-        val createFunction =
-            getCreateFunction(
-                s3Config,
-                Function<String, BufferStorage> { fileExtension: String ->
-                    FileBuffer(fileExtension)
-                },
-                useV2FieldNames = true
-            )
-
         // Parquet has significantly higher overhead. This small adjustment
         // results in a ~5x performance improvement.
         val adjustedMemoryRatio =
@@ -221,25 +218,73 @@ class S3ConsumerFactory {
                 memoryRatio
             }
 
+        // This needs to be called before the creation of the flush function because it updates
+        // writeConfigs!
+        val onStartFunction = onStartFunction(storageOps, writeConfigs)
+
+        val streamDescriptorToWriteConfig =
+            writeConfigs.associateBy {
+                StreamDescriptor().withNamespace(it.namespace).withName(it.streamName)
+            }
+        val flushFunction =
+            if (s3Config.formatConfig.format == FileUploadFormat.RAW_FILES) {
+                object : DestinationFlushFunction {
+                    override fun flush(
+                        streamDescriptor: StreamDescriptor,
+                        stream: Stream<PartialAirbyteMessage>
+                    ) {
+                        val records = stream.toList()
+                        val writeConfig = streamDescriptorToWriteConfig.getValue(streamDescriptor)
+                        if (records.isEmpty()) {
+                            return
+                        }
+                        if (records.size > 1) {
+                            throw RuntimeException(
+                                "the destinationFlushFunction for RAW_FILES should be called with only 1 record"
+                            )
+                        }
+                        val relativePath = records[0].record!!.file!!
+                        storageOps.loadDataIntoBucket(
+                            fullObjectKey = relativePath,
+                            dataFilePath =
+                                featureFlags.airbyteStagingDirectory().resolve(relativePath),
+                            generationId = writeConfig.generationId
+                        )
+                    }
+
+                    override val optimalBatchSizeBytes: Long = 1L
+                }
+            } else {
+                val createFunction =
+                    getCreateFunction(
+                        s3Config,
+                        Function<String, BufferStorage> { fileExtension: String ->
+                            FileBuffer(fileExtension)
+                        },
+                        useV2FieldNames = true
+                    )
+                S3DestinationFlushFunction(
+                    // Ensure the file buffer is always larger than the memory buffer,
+                    // as the file buffer will be flushed at the end of the memory flush.
+                    optimalBatchSizeBytes =
+                        (FileBuffer.MAX_PER_STREAM_BUFFER_SIZE_BYTES * 0.9).toLong(),
+                    {
+                        // Yield a new BufferingStrategy every time we flush (for thread-safety).
+                        SerializedBufferingStrategy(
+                            createFunction,
+                            catalog,
+                            flushBufferFunction(storageOps, writeConfigs, catalog)
+                        )
+                    },
+                    generationAndSyncIds
+                )
+            }
+
         return AsyncStreamConsumer(
             outputRecordCollector,
-            onStartFunction(storageOps, writeConfigs),
+            onStartFunction,
             onCloseFunction(storageOps, writeConfigs),
-            S3DestinationFlushFunction(
-                // Ensure the file buffer is always larger than the memory buffer,
-                // as the file buffer will be flushed at the end of the memory flush.
-                optimalBatchSizeBytes =
-                    (FileBuffer.MAX_PER_STREAM_BUFFER_SIZE_BYTES * 0.9).toLong(),
-                {
-                    // Yield a new BufferingStrategy every time we flush (for thread-safety).
-                    SerializedBufferingStrategy(
-                        createFunction,
-                        catalog,
-                        flushBufferFunction(storageOps, writeConfigs, catalog)
-                    )
-                },
-                generationAndSyncIds
-            ),
+            flushFunction,
             catalog,
             // S3 has no concept of default namespace
             // In the "namespace from destination case", the namespace

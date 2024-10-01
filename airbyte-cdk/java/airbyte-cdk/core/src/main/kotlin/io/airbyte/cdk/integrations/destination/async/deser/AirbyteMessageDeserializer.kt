@@ -95,4 +95,35 @@ class AirbyteMessageDeserializer(
 
         return partial
     }
+
+    fun checkRecordMessageValid(partial: PartialAirbyteMessage) {
+        if (partial.record?.data != null) {
+            if (hasSeenRecordsWithFile) {
+                throw RuntimeException()
+            } else {
+                synchronized(javaClass) {
+                    if (hasSeenRecordsWithFile) {
+                        throw RuntimeException()
+                    }
+                    hasSeenRecordsWithData = true
+                }
+            }
+        } else {
+            if (hasSeenRecordsWithData) {
+                throw RuntimeException()
+            } else {
+                synchronized(javaClass) {
+                    if (hasSeenRecordsWithData) {
+                        throw RuntimeException()
+                    }
+                    hasSeenRecordsWithFile = true
+                }
+            }
+        }
+    }
+
+    companion object {
+        var hasSeenRecordsWithData = false
+        var hasSeenRecordsWithFile = false
+    }
 }
