@@ -41,6 +41,7 @@ class NonDockerizedDestination(
                 TestDeploymentMode.CLOUD -> mapOf("deployment.mode" to "CLOUD")
                 TestDeploymentMode.OSS -> mapOf("deployment.mode" to "OSS")
             }
+        // TODO set the equivalent of the WORKER_JOB_ID env var here
         destination =
             CliRunner.destination(
                 command,
