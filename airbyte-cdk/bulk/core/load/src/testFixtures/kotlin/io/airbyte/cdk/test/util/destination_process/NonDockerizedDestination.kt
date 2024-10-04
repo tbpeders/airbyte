@@ -78,7 +78,9 @@ class NonDockerizedDestinationFactory : DestinationProcessFactory {
         config: ConfigurationSpecification?,
         catalog: ConfiguredAirbyteCatalog?,
         deploymentMode: TestDeploymentMode,
+        testName: String,
     ): DestinationProcess {
+        // TODO pass test name into the destination process
         return NonDockerizedDestination(command, config, catalog, deploymentMode)
     }
 }

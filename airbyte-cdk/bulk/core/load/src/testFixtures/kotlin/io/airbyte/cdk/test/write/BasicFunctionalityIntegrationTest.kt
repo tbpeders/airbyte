@@ -40,7 +40,12 @@ abstract class BasicFunctionalityIntegrationTest(
 ) : IntegrationTest(dataDumper, destinationCleaner, recordMangler, nameMapper) {
     @Test
     open fun testCheck() {
-        val process = destinationProcessFactory.createDestinationProcess("check", config = config)
+        val process =
+            destinationProcessFactory.createDestinationProcess(
+                "check",
+                config = config,
+                testName = testPrettyName,
+            )
         process.run()
         val messages = process.readMessages()
         val checkMessages = messages.filter { it.type == AirbyteMessage.Type.CONNECTION_STATUS }

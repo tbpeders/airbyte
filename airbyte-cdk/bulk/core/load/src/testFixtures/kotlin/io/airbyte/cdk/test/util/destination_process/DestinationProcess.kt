@@ -47,5 +47,6 @@ interface DestinationProcessFactory {
         config: ConfigurationSpecification? = null,
         catalog: ConfiguredAirbyteCatalog? = null,
         deploymentMode: TestDeploymentMode = TestDeploymentMode.OSS,
+        testName: String,
     ): DestinationProcess
 }

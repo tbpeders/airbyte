@@ -28,6 +28,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.apache.commons.lang3.RandomStringUtils
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.TestInfo
 import org.junit.jupiter.api.parallel.Execution
 import org.junit.jupiter.api.parallel.ExecutionMode
 
@@ -60,6 +62,22 @@ abstract class IntegrationTest(
             .format(DateTimeFormatter.ofPattern("YYYYMMDD"))
     // stream name doesn't need to be randomized, only the namespace.
     val randomizedNamespace = "test$timestampString$randomSuffix"
+
+    // junit is a bit wonky with injecting TestInfo.
+    // You can declare it as a constructor param, but you get a TestInfo instance
+    // that doesn't know what test method it's running in.
+    // You can also declare it as a param on the test function, but that's just
+    // less convenient.
+    // This is the only way to avoid copying the TestInfo stuff everywhere :/
+    // (I don't think micronaut can inject this object, unfortunately)
+    protected lateinit var testInfo: TestInfo
+    protected lateinit var testPrettyName: String
+
+    @BeforeEach
+    fun getTestInfo(testInfo: TestInfo) {
+        this.testInfo = testInfo
+        testPrettyName = "${testInfo.testClass.get().simpleName}.${testInfo.displayName}"
+    }
 
     @AfterEach
     fun teardown() {
@@ -113,6 +131,7 @@ abstract class IntegrationTest(
                 "write",
                 config,
                 catalog.asProtocolObject(),
+                testName = testPrettyName,
             )
         return runBlocking {
             val destinationCompletion = async { destination.run() }

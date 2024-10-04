@@ -44,6 +44,7 @@ open class CheckIntegrationTest<T : ConfigurationSpecification>(
                     "check",
                     config = config,
                     deploymentMode = deploymentMode,
+                    testName = testPrettyName,
                 )
             process.run()
             val messages = process.readMessages()
@@ -73,6 +74,7 @@ open class CheckIntegrationTest<T : ConfigurationSpecification>(
                     "check",
                     config = config,
                     deploymentMode = deploymentMode,
+                    testName = testPrettyName,
                 )
             process.run()
             val messages = process.readMessages()
