@@ -13,9 +13,9 @@ import io.airbyte.protocol.models.v0.AirbyteMessage
 import io.airbyte.protocol.models.v0.AirbyteTraceMessage
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteCatalog
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.micronaut.context.annotation.Value
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
-import io.micronaut.context.annotation.Value
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Clock
@@ -116,7 +116,7 @@ class DockerizedDestination(
         fun addInput(paramName: String, fileContents: Any) {
             Files.write(
                 jobRoot.resolve("destination_$paramName.json"),
-                Jsons.writeValueAsBytes(fileContents)
+                Jsons.writeValueAsBytes(fileContents),
             )
             cmd.add("--$paramName")
             cmd.add("destination_$paramName.json")
@@ -151,7 +151,9 @@ class DockerizedDestination(
                             val combinedMessage =
                                 message.log.message +
                                     (if (message.log.stackTrace != null)
-                                        (System.lineSeparator() + "Stack Trace: " + message.log.stackTrace)
+                                        (System.lineSeparator() +
+                                            "Stack Trace: " +
+                                            message.log.stackTrace)
                                     else "")
                             getMdcScope().use {
                                 when (message.log.level) {
@@ -203,14 +205,15 @@ class DockerizedDestination(
             // Hey look, it's possible to extract the error from a failed destination process!
             // because "destination exit code 1" is the least-helpful error message.
             val filteredTraces =
-                destinationOutput.traces()
+                destinationOutput
+                    .traces()
                     .filter { it.type == AirbyteTraceMessage.Type.ERROR }
                     .map { it.error }
             throw RuntimeException(
                 """
                     Destination process exited uncleanly: $exitCode
                     Trace messages: $filteredTraces
-                    """.trimIndent()
+                    """.trimIndent(),
             )
         }
     }
